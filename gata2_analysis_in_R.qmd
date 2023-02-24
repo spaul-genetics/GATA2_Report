@@ -1,0 +1,272 @@
+---
+title: "NCBR-227"
+subtitle: "Cox Regression on GATA2 data"
+author: 
+  - Subrata Paul
+title-block-banner: "#27445C"
+format:
+  html:
+    toc: true
+    toc-location: left
+    page-layout: full
+    theme: 
+      light: cosmo
+      dark: darkly
+    html-math-method: katex
+    code-fold: true
+    highlight-style: tango
+    toc_float: true
+    number-sections: false
+    embed-resources: true
+    smooth-scroll: true
+    fig-align: 'center'
+    fig-width: 10
+    fig-height: 10
+css: style.css
+editor: source
+execute: 
+  cache: false
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(echo = F, message = F, warning = F, error = F)
+  library(readxl, quietly = T)
+  library(survival, quietly = T)
+  library(tidyverse, quietly = T)
+  library(DT, quietly = T)
+  library(survminer, quietly = T)
+  library(coxme, quietly = T)
+  library(xtable, quietly = T)
+  library(kinship2, quietly = T)
+  options(xtable.comment = FALSE)
+  library(kableExtra, quietly = T)
+```
+  
+  
+```{r}
+data = readxl::read_excel('./data/gata2_data_with_PED_230122.xlsx', .name_repair = make.names)
+
+data = data%>%
+  mutate(mutation.Class = stringr::str_to_sentence(mutation.Class))%>%
+  mutate(Gender = toupper(Gender))
+
+#data$mutation.Class[data$mutation.Class=='c term'] = 'C term'
+#data$Gender[data$Gender=='f']='F'
+
+mod.data = data%>%tidyr::replace_na(list(age.First.Sx = 0, nothing = 0))%>%
+  mutate(ageonset = age.First.Sx + nothing, censor = as.numeric(nothing == 0))%>%
+  select(Indiv.ID, ageonset, censor, mutation.Class, Missense.group, Gender, Family.ID, Phenotype, Missense.group)%>%
+  mutate(mutation.Class = factor(mutation.Class, levels = c("Enhancer","C term","Missense 2nd ZF","Null","Truncation")))%>%
+  filter(ageonset!=0)%>%
+  mutate(mutation.Class = relevel(factor(mutation.Class), ref = 'Enhancer'))%>%
+  mutate(Missense.group = relevel(factor(Missense.group), ref = 'R398'))
+#mod.data$mutation.Class = factor(mutation.Class, levels = c("Enhancer","C term","Missense 2nd ZF","Null","Truncation"))%>%
+  
+
+#mod.data = mod.data%>%filter(ageonset!=0)
+#mod.data = mod.data%>%mutate(mutation.Class = relevel(factor(mutation.Class), ref = 'Enhancer'))
+#mod.data = mod.data%>%mutate(Missense.group = relevel(factor(Missense.group), ref = 'R398'))
+```
+
+## Data
+
+
+
+```{r}
+create_dt <- function(x){
+  DT::datatable(x,
+                extensions = 'Buttons',
+                options = list(dom = 'Blfrti',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),
+                                                 c(10,25,50,"All")),
+                               pageLength = 10000, scrollY = "400px", scrollX = T))
+}
+create_dt(mod.data)
+```
+
+## Kaplan-Meier Analysis
+
+::: {.panel-tabset}
+
+### Overall (Only Cases)
+
+```{r fig.align='center', fig.width=8, fig.height=6}
+km_fit <- survfit(formula = Surv(ageonset, censor) ~ 1, data = mod.data)
+fig = ggsurvplot(km_fit, data = mod.data, conf.int = T, risk.table = T, break.time.by = 5, xlab = 'Age (years)', ylab = '% asymptomatic')
+fig
+```
+
+### Only cases
+
+```{r fig.align='center', fig.width=8, fig.height=6}
+km_fit <- survfit(formula = Surv(ageonset, censor) ~ 1, data = mod.data[mod.data$Phenotype==2,])
+fig = ggsurvplot(km_fit, data = mod.data[mod.data$Phenotype==2,], conf.int = T, risk.table = T, break.time.by = 5, xlab = 'Age (years)', ylab = '% asymptomatic')
+fig
+```
+
+
+
+
+
+### Without unknown missense changes
+
+```{r}
+km_fit <- survfit(formula = Surv(ageonset, censor) ~ 1, data = mod.data%>%filter(!(mutation.Class == 'missense 2nd ZF' & is.na(Missense.group))))
+fig = ggsurvplot(km_fit, data = mod.data%>%filter(!(mutation.Class == 'missense 2nd ZF' & is.na(Missense.group))), conf.int = T, risk.table = T, break.time.by = 5, xlab = 'Age (years)', ylab = '% asymptomatic')
+fig
+```
+
+### Gender
+
+```{r fig.align='center', fig.width=8, fig.height=6}
+cbb = c("#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00")
+km_fit <- survfit(formula = Surv(ageonset, censor) ~ Gender, data = mod.data)
+fig = ggsurvplot(km_fit, data = mod.data, conf.int = F, risk.table = T, break.time.by = 5, palette = cbb[1:2] , xlab = 'Age (years)')
+
+fig$plot = fig$plot + scale_color_manual(values = cbb[1:2], labels = c('Gender=1' = 'Male','Gender=2' = 'Female')) + scale_fill_discrete(guide = 'none') + labs(y = '% asymptomatic')
+fig$table = fig$table + scale_y_discrete(labels = c('Female', 'Male'))
+fig
+```
+
+### Mutation Class
+
+```{r fig.align='center', fig.width=8, fig.height=6}
+
+change_labels<-function(x){
+  gsub('mutation.Class=','',x)%>%stringr::str_to_sentence()
+}
+
+cbb = c("#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00")
+km_fit <- survfit(formula = Surv(ageonset, censor) ~ mutation.Class, data = mod.data)
+fig = ggsurvplot(km_fit, data = mod.data, conf.int = F, risk.table = T, break.time.by = 5, xlab = 'Age (years)')
+labels = c('mutation.Class=enhancer' = 'Enhancer','mutation.Class=C term' = 'C term', 'mutation.Class=missense 2nd ZF' = 'Missense 2nd ZF', 'mutation.Class=null' = 'Null', 'mutation.Class=truncation' = 'Truncation')
+fig$plot = fig$plot+ scale_color_manual(values = cbb) + scale_color_discrete(labels = labels) + scale_fill_discrete(guide = 'none') + labs(y = '% asymptomatic') 
+fig$table = fig$table + scale_y_discrete(labels = c('Truncation', 'Null','Missense 2nd ZF','C term','Enhancer'))
+fig
+```
+
+
+### Missense Group
+
+```{r fig.align='center', fig.width=8, fig.height=6}
+km_fit <- survfit(formula = Surv(ageonset, censor) ~ Missense.group, data = mod.data)
+fig = ggsurvplot(km_fit, data = mod.data, conf.int = F, risk.table = T, break.time.by = 5, xlab = 'Age (years)')
+
+labels = c('Missense.group=R361' = 'R361', 'Missense.group=R396' = 'R396', 'Missense.group=R398' = 'R398', 'Missense.group=T354' = 'T354')
+
+fig$plot = fig$plot+ scale_color_manual(values = cbb) + scale_color_discrete(labels = labels) + scale_fill_discrete(guide = 'none')+ labs(y = '% asymptomatic')
+fig$table = fig$table + scale_y_discrete(labels = c('T354','R396','R361','R398')) 
+fig
+
+```
+
+
+:::
+
+
+
+## Mixed Effect Cox Regression
+
+Cox proportional hazard model is commonly used in survival analysis that models the hazard function which denotes the instantaneous rate of the occurrence of an event at a time given that the subject survived upto that point. Including random effect in the Cox's proportional hazard model enables us to incorporate within group homogeneity in outcomes. A mixed effect model in general multivariate analysis is used to control for relatedness in the samples. I used the kinship matrix (kinship2 R package) to correct for relatedness as a random effect. 
+
+
+```{r}
+data$Gender = as.numeric(data$Gender)
+data_fixed = with(data, fixParents(id = Indiv.ID, dadid = Pat.ID, momid = Mat.ID, sex = Gender))
+#data_fixed = data_fixed%>%na_if(0)
+data_fixed[data_fixed==0]<-NA
+ped = with(data_fixed, pedigree(id = id, dadid = dadid, momid = momid, sex = sex))
+
+kmat = kinship(ped)
+fixed_effect = coxph(Surv(ageonset, censor) ~ mutation.Class + mutation.Class + Gender, data = mod.data)
+fit1 = coxme(Surv(ageonset, censor) ~ mutation.Class + Gender + (1|Family.ID), data = mod.data)
+fit2 = coxme(Surv(ageonset, censor) ~ mutation.Class + Gender + (1|Indiv.ID), data = mod.data, varlist = coxmeMlist(2*kmat, rescale = T))
+sjPlot::tab_model(fit2, show.ci = 0.95, string.est = 'HR')
+```
+
+Enhancer is selected as the baseline mutation class. All the mutation other than C-term increases risk compared to enhancer mutation. An individual with truncation mutation has five times hazard than an individual with enhancer mutation. To be able to compare each mutation class, I used `emmeans` package. Note that, results in the following table are averaged over the levels of: Gender. P value adjustment was made using tukey method for comparing a family of 5 estimates. 
+
+```{r}
+emeans = emmeans::emmeans(fit2, specs = revpairwise ~ mutation.Class, type = 'response')
+emeans.pvalue = summary(emeans$contrasts)%>%as.data.frame()%>%arrange(p.value)%>%select(contrast, ratio, p.value)%>%rename(HR = ratio)
+emeans.unadj = emmeans::emmeans(fit2, specs = revpairwise ~ mutation.Class, type = 'response', adjust = 'none')
+emeans.unadj.pvalue = summary(emeans.unadj$contrasts)%>%as.data.frame()%>%arrange(p.value)%>%select(contrast, p.value)%>%rename(`p.value(Unadjusted)` = p.value)
+emeans.pvalue = merge(emeans.pvalue, emeans.unadj.pvalue)
+emeans.ci = confint(emeans)$contrasts%>%as.data.frame()%>%select(contrast, asymp.LCL, asymp.UCL)%>%rename(LCI = asymp.LCL, UCI = asymp.UCL)
+emeans.summ<-merge(emeans.pvalue, emeans.ci)%>%arrange(p.value)
+emeans.summ%>%datatable()%>%formatRound(columns = c('HR', 'LCI', 'UCI'), digits = 3)%>%formatSignif(columns = c('p.value', 'p.value(Unadjusted)'), digits = 3)
+
+#summary(emeans$contrasts)%>%as.data.frame()%>%arrange(p.value)%>%select(contrast, ratio, p.value)%>%datatable()%>%formatRound(columns = c('ratio'), digits = 3)%>%formatSignif(columns = 'p.value', digits = 2)
+```
+
+
+
+
+Most important assumption for this model is the "proportional hazard" which was not violated. 
+
+```{r}
+cox.zph(fit2)
+```
+
+
+Sample size for testing difference between missense group is `r sum(!is.na(mod.data$Missense.group))`. R398 is selected as the baseline missense group. Missense group R396 (strong evidence p < 0.01) and T354 (moderate evidence p< 0.05) increases risk compared to R398 missense mutation. An individual with R396 missense mutation on an average has two and half times higher hazard than an individual with R398 mutation. 
+
+```{r}
+fit3 = coxme(Surv(ageonset, censor) ~  Missense.group+ Gender + (1|Indiv.ID), data = mod.data, varlist = coxmeMlist(2*kmat, rescale = T))
+sjPlot::tab_model(fit3, show.ci = 0.95, string.est = 'HR')
+
+```
+
+
+
+```{r echo=F, eval=F, include=F}
+emeans_mis = emmeans::emmeans(fit3, specs = revpairwise ~ Missense.group, type = 'response')
+emeans_mis.unadj = emmeans::emmeans(fit3, specs = revpairwise ~ Missense.group, type = 'response', adjust = 'none')
+emeans_mis.pvalue = summary(emeans_mis$contrasts)%>%as.data.frame()%>%select(contrast, ratio, p.value)%>%rename(HR = ratio)
+emeans_mis.unadj.pvalue = summary(emeans_mis.unadj$contrasts)%>%as.data.frame()%>%select(contrast, p.value)%>%rename(`p.value(Unadjusted)` = p.value)
+emeans_mis.pvalue = merge(emeans_mis.pvalue, emeans_mis.unadj.pvalue)
+emeans_mis.ci = confint(emeans_mis)$contrasts%>%as.data.frame()%>%select(contrast, asymp.LCL, asymp.UCL)%>%rename(LCI = asymp.LCL, UCI = asymp.UCL)
+emeans_mis.summ = merge(emeans_mis.pvalue, emeans_mis.ci)%>%arrange(p.value)
+emeans_mis.summ%>%datatable()%>%formatRound(columns = c('HR', 'LCI', 'UCI'), digits = 3)%>%formatSignif(columns = c('p.value', 'p.value(Unadjusted)'), digits = 3)
+
+```
+
+
+## Packages and Citations 
+
+::: {.panel-tabset}
+
+### Packages used
+
+```{r}
+sessionInfo()
+```
+
+### Citations
+
+Citation for R itself
+
+```{r}
+citation()$textVersion
+```
+
+Citation for `survival` package
+
+```{r}
+citation(package = 'survival')
+```
+
+Citation for `coxme`
+
+```{r}
+citation(package = 'coxme')
+```
+
+Citation for `kinship2`
+
+```{r}
+citation(package = 'kinship2')
+```
+
+:::
