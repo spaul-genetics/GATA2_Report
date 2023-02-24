@@ -50,9 +50,6 @@ data = data%>%
   mutate(mutation.Class = stringr::str_to_sentence(mutation.Class))%>%
   mutate(Gender = toupper(Gender))
 
-#data$mutation.Class[data$mutation.Class=='c term'] = 'C term'
-#data$Gender[data$Gender=='f']='F'
-
 mod.data = data%>%tidyr::replace_na(list(age.First.Sx = 0, nothing = 0))%>%
   mutate(ageonset = age.First.Sx + nothing, censor = as.numeric(nothing == 0))%>%
   select(Indiv.ID, ageonset, censor, mutation.Class, Missense.group, Gender, Family.ID, Phenotype, Missense.group)%>%
@@ -60,12 +57,7 @@ mod.data = data%>%tidyr::replace_na(list(age.First.Sx = 0, nothing = 0))%>%
   filter(ageonset!=0)%>%
   mutate(mutation.Class = relevel(factor(mutation.Class), ref = 'Enhancer'))%>%
   mutate(Missense.group = relevel(factor(Missense.group), ref = 'R398'))
-#mod.data$mutation.Class = factor(mutation.Class, levels = c("Enhancer","C term","Missense 2nd ZF","Null","Truncation"))%>%
-  
 
-#mod.data = mod.data%>%filter(ageonset!=0)
-#mod.data = mod.data%>%mutate(mutation.Class = relevel(factor(mutation.Class), ref = 'Enhancer'))
-#mod.data = mod.data%>%mutate(Missense.group = relevel(factor(Missense.group), ref = 'R398'))
 ```
 
 ## Data
