@@ -64,7 +64,7 @@ mod.data = data%>%tidyr::replace_na(list(age.First.Sx = 0, nothing = 0))%>%
 
 
 
-```{r}
+```{r eval=F}
 create_dt <- function(x){
   DT::datatable(x,
                 extensions = 'Buttons',
