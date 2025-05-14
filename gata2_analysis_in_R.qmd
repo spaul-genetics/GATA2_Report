@@ -44,7 +44,7 @@ execute:
   
   
 ```{r}
-data = readxl::read_excel('./data/gata2_data_with_PED_230122.xlsx', .name_repair = make.names)
+data = readxl::read_excel('./data/Subrata PED file 241120.xlsx', .name_repair = make.names)
 
 data = data%>%
   mutate(mutation.Class = stringr::str_to_sentence(mutation.Class))%>%
